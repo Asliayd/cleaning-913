@@ -41,127 +41,169 @@
   </div>
 </div>
 
-<script>
-// ---------- Konfig ----------
-const NAMES = ["Tülin","Aslı","Ebrar","İrem","Ziyade"]; // döngü
-const START_ISO = "2025-12-01"; // 1 Aralık (Tülin başlar)
-const INTERVAL = 5; // gün
-const END_ISO = "2026-01-31"; // Ocak sonu
+<!-- FIREBASE EKLENDİ -->
+<script type="module">
+  // Firebase core
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+  import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
 
-// localStorage anahtarları
-const DONE_KEY = 'clean_done_v1';
-const NEEDS_KEY = 'clean_needs_v1';
+  // Senin config'in
+  const firebaseConfig = {
+    apiKey: "AIzaSyAS1ThvUGRZWAsSXTAArHsK3DI_6lhNyIk",
+    authDomain: "cleanind-91.firebaseapp.com",
+    databaseURL: "https://cleanind-91-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "cleanind-91",
+    storageBucket: "cleanind-91.firebasestorage.app",
+    messagingSenderId: "227420178324",
+    appId: "1:227420178324:web:41fee1632d8217a0573181",
+    measurementId: "G-4CHKENMCSM"
+  };
 
-// yardımcılar
-const toISO = d => d.toISOString().slice(0,10);
-const parseISO = s => new Date(s + 'T00:00:00');
-const addDays = (d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+  // Başlat
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
 
-// veriler
-let done = JSON.parse(localStorage.getItem(DONE_KEY) || '{}');
-let needs = JSON.parse(localStorage.getItem(NEEDS_KEY) || '[]');
+  // ---------- Konfig ----------
+  const NAMES = ["Tülin","Aslı","Ebrar","İrem","Ziyade"];
+  const START_ISO = "2025-12-01";
+  const INTERVAL = 5;
+  const END_ISO = "2026-01-31";
 
-// render takvim (sadece görev günlerini listeler)
-function generateCleaningDates(startISO, interval, endISO){
-  const start = parseISO(startISO);
-  const end = parseISO(endISO);
-  const list = [];
-  let cur = new Date(start);
-  let i = 0;
-  while(cur <= end){
-    list.push({date: toISO(cur), name: NAMES[i % NAMES.length]});
-    i++;
-    cur = addDays(start, i * interval);
+  // Yerelleri silmiyoruz ama Firebase öncelikli
+  let done = {};
+  let needs = [];
+
+  // Firebase listener → gerçek zamanlı güncelleme
+  onValue(ref(db, "cleaning/done"), snap => {
+    done = snap.val() || {};
+    renderCalendar();
+  });
+
+  onValue(ref(db, "cleaning/needs"), snap => {
+    needs = snap.val() || [];
+    renderNeeds();
+  });
+
+  // Firebase'e yaz
+  function fbSet(path, data) {
+    return set(ref(db, "cleaning/" + path), data);
   }
-  return list;
-}
 
-function renderCalendar(){
-  const area = document.getElementById('takvimArea');
-  area.innerHTML = '';
-  const list = generateCleaningDates(START_ISO, INTERVAL, END_ISO);
+  const toISO = d => d.toISOString().slice(0,10);
+  const parseISO = s => new Date(s + 'T00:00:00');
+  const addDays = (d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
 
-  list.forEach(item=>{
-    const row = document.createElement('div');
-    row.className = 'cleanDay';
+  function generateCleaningDates(startISO, interval, endISO){
+    const start = parseISO(startISO);
+    const end = parseISO(endISO);
+    const list = [];
+    let cur = new Date(start);
+    let i = 0;
+    while(cur <= end){
+      list.push({date: toISO(cur), name: NAMES[i % NAMES.length]});
+      i++;
+      cur = addDays(start, i * interval);
+    }
+    return list;
+  }
 
-    const left = document.createElement('div');
-    left.style.display = 'flex';
-    left.style.alignItems = 'center';
+  function renderCalendar(){
+    const area = document.getElementById('takvimArea');
+    area.innerHTML = '';
+    const list = generateCleaningDates(START_ISO, INTERVAL, END_ISO);
 
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.className = 'chk'; cb.dataset.date = item.date;
-    cb.checked = !!done[item.date];
-    cb.addEventListener('change', e=>{
-      if(e.target.checked) done[item.date]=true; else delete done[item.date];
-      localStorage.setItem(DONE_KEY, JSON.stringify(done));
-      renderCalendar();
+    list.forEach(item=>{
+      const row = document.createElement('div');
+      row.className = 'cleanDay';
+
+      const left = document.createElement('div');
+      left.style.display = 'flex';
+      left.style.alignItems = 'center';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.className = 'chk'; cb.dataset.date = item.date;
+      cb.checked = !!done[item.date];
+      cb.addEventListener('change', e=>{
+        if(e.target.checked) done[item.date]=true;
+        else delete done[item.date];
+        fbSet("done", done);
+      });
+
+      const txt = document.createElement('div');
+      txt.innerHTML = `<span class="person">${item.name}</span> <span class="date">${formatDate(item.date)}</span>`;
+      txt.style.marginLeft = '10px';
+
+      left.appendChild(cb);
+      left.appendChild(txt);
+
+      row.appendChild(left);
+
+      const status = document.createElement('div');
+      status.className = 'muted';
+      status.textContent = done[item.date] ? 'Tamamlandı' : '';
+      row.appendChild(status);
+
+      area.appendChild(row);
     });
+  }
 
-    const txt = document.createElement('div');
-    txt.innerHTML = `<span class="person">${item.name}</span> <span class="date">${formatDate(item.date)}</span>`;
-    txt.style.marginLeft = '10px';
+  function renderNeeds(){
+    const container = document.getElementById('needsContainer');
+    container.innerHTML = '';
+    needs.forEach((n,i)=>{
+      const item = document.createElement('div');
+      item.className = 'needItem';
 
-    left.appendChild(cb);
-    left.appendChild(txt);
+      const left = document.createElement('div');
+      left.style.display='flex'; left.style.alignItems='center';
 
-    row.appendChild(left);
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = !!n.done; cb.className='chk';
+      cb.addEventListener('change', ()=>{
+        needs[i].done = cb.checked;
+        fbSet("needs", needs);
+      });
 
-    const status = document.createElement('div');
-    status.className = 'muted';
-    status.textContent = done[item.date] ? 'Tamamlandı' : '';
-    row.appendChild(status);
+      const txt = document.createElement('div'); txt.textContent = n.text; txt.style.marginLeft='8px';
+      if(n.done) txt.style.textDecoration = 'line-through';
 
-    area.appendChild(row);
-  });
-}
+      left.appendChild(cb); left.appendChild(txt);
 
-// ihtiyaç listesi yönetimi
-function renderNeeds(){
-  const container = document.getElementById('needsContainer');
-  container.innerHTML = '';
-  needs.forEach((n,i)=>{
-    const item = document.createElement('div');
-    item.className = 'needItem';
+      item.appendChild(left);
 
-    const left = document.createElement('div');
-    left.style.display='flex'; left.style.alignItems='center';
+      const del = document.createElement('button'); 
+      del.textContent='Sil'; 
+      del.style.background='transparent'; 
+      del.style.border='0'; 
+      del.style.color='var(--muted)'; 
+      del.style.cursor='pointer';
+      del.addEventListener('click', ()=>{
+        needs.splice(i,1);
+        fbSet("needs", needs);
+      });
 
-    const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = !!n.done; cb.className='chk';
-    cb.addEventListener('change', ()=>{ needs[i].done = cb.checked; saveNeeds(); renderNeeds(); });
+      item.appendChild(del);
+      container.appendChild(item);
+    });
+  }
 
-    const txt = document.createElement('div'); txt.textContent = n.text; txt.style.marginLeft='8px';
-    if(n.done) txt.style.textDecoration = 'line-through';
+  function addNeed(){
+    const inp = document.getElementById('needInput');
+    const v = inp.value.trim(); 
+    if(!v) return; 
+    needs.push({text:v, done:false}); 
+    inp.value='';
+    fbSet("needs", needs);
+  }
 
-    left.appendChild(cb); left.appendChild(txt);
+  function formatDate(iso){
+    const d = parseISO(iso);
+    return d.toLocaleDateString('tr-TR', {weekday:'short', day:'numeric', month:'long'});
+  }
 
-    item.appendChild(left);
-
-    const del = document.createElement('button'); del.textContent='Sil'; del.style.background='transparent'; del.style.border='0'; del.style.color='var(--muted)'; del.style.cursor='pointer';
-    del.addEventListener('click', ()=>{ needs.splice(i,1); saveNeeds(); renderNeeds(); });
-    item.appendChild(del);
-
-    container.appendChild(item);
-  });
-}
-
-function saveNeeds(){ localStorage.setItem(NEEDS_KEY, JSON.stringify(needs)); }
-
-function addNeed(){
-  const inp = document.getElementById('needInput');
-  const v = inp.value.trim(); if(!v) return; needs.push({text:v, done:false}); inp.value=''; saveNeeds(); renderNeeds();
-}
-
-function formatDate(iso){
-  const d = parseISO(iso);
-  return d.toLocaleDateString('tr-TR', {weekday:'short', day:'numeric', month:'long'});
-}
-
-// init
-document.getElementById('addNeedBtn').addEventListener('click', addNeed);
-document.getElementById('needInput').addEventListener('keyup', e=>{ if(e.key==='Enter') addNeed(); });
-renderCalendar(); renderNeeds();
+  document.getElementById('addNeedBtn').addEventListener('click', addNeed);
+  document.getElementById('needInput').addEventListener('keyup', e=>{ if(e.key==='Enter') addNeed(); });
 
 </script>
+
 </body>
 </html>
